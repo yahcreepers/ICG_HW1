@@ -1,0 +1,1191 @@
+<html>
+
+<head>
+<title>ICG WebGL &mdash; HW1</title>
+<meta http-equiv="content-type" content="text/html; charset=ISO-8859-1">
+
+<script type="text/javascript" src="./js/gl-matrix-min.js"></script>
+<script type="text/javascript" src="./js/webgl-utils.js"></script>
+
+<!-- 
+    TODO HERE: 
+    modify fragment shader or write another one
+    to implement flat, gouraud and phong shading
+ -->
+<!--
+    TODO HERE:
+    modify vertex shader or write another one
+    to implement flat, gouraud and phong shading
+
+    NOTE:
+    if you want to write bonus part (texture mapping),
+    only Teapot.json has extra attribute "vertexTextureCoords"
+    which is used for texture mappping.
+ -->
+<script id="Flat_fragmentShader" type="fragment">
+    #extension GL_OES_standard_derivatives : enable
+    precision highp float;
+    uniform vec3 light_color[3];
+    uniform vec4 light_position[3];
+    uniform vec4 Ka[3];
+    uniform vec4 Kd[3];
+    uniform vec4 Ks[3];
+    uniform float Shininess;
+    varying vec4 fragcolor;
+    varying vec3 mvVertex;
+    void main(void) {
+        
+        vec3 color = vec3(0, 0, 0);
+        vec3 normal = normalize(cross(dFdx(mvVertex), dFdy(mvVertex)));
+        vec3 camera_direction = normalize(-mvVertex);
+        
+        for(int i = 0;i<3;i++){
+            /* ambient */
+            vec3 ambient_color = vec3(Ka[i]) * vec3(fragcolor);
+            /* diffuse */
+            vec3 light_direction = normalize(vec3(light_position[i]) - mvVertex);
+            vec3 diffuseColor = max(dot(normal, light_direction),0.0) * (vec3(Kd[i]) * vec3(fragcolor));
+            /* specular */
+            vec3 reflection_direction = normalize(reflect(-light_direction, normal));
+            vec3 specularColor = pow(max(dot(reflection_direction, camera_direction), 0.0), 1.0) * (vec3(Ks[i]) * vec3(fragcolor));
+            color += ambient_color + diffuseColor + specularColor;
+        }
+        gl_FragColor = vec4(color, 1.0);
+    }
+</script>
+
+<script id="Flat_vertexShader" type="vertex">
+    #extension GL_OES_standard_derivatives : enable
+    attribute vec3 aVertexPosition;
+    attribute vec3 aFrontColor;
+    attribute vec3 aVertexNormal;
+
+    uniform mat4 uMVMatrix;
+    uniform mat4 uPMatrix;
+
+	varying vec4 fragcolor;
+    varying vec3 mvVertex;
+
+    void main(void) {
+        mvVertex = (uMVMatrix * vec4(aVertexPosition,1.0)).xyz;
+        fragcolor = vec4(aFrontColor.rgb, 1.0);
+        gl_Position = uPMatrix * uMVMatrix * vec4(aVertexPosition, 1.0);
+    }
+</script>
+
+<script id="Gouraud_fragmentShader" type="fragment">
+    precision highp float;
+    
+    varying vec4 fragcolor;
+    void main(void) {
+        gl_FragColor = fragcolor;
+    }
+</script>
+
+<script id="Gouraud_vertexShader" type="vertex">
+    attribute vec3 aVertexPosition;
+    attribute vec3 aFrontColor;
+    attribute vec3 aVertexNormal;
+    
+    uniform vec3 light_color[3];
+    uniform vec4 light_position[3];
+    uniform vec4 Ka[3];
+    uniform vec4 Kd[3];
+    uniform vec4 Ks[3];
+    uniform float Shininess;
+
+    uniform mat4 uMVMatrix;
+    uniform mat4 uPMatrix;
+
+    varying vec4 fragcolor;
+    varying vec3 mvVertex;
+
+    void main(void) {
+        mvVertex = (uMVMatrix * vec4(aVertexPosition,1.0)).xyz;
+        vec3 color = vec3(0, 0, 0);
+        vec3 camera_direction = normalize(-mvVertex);
+        vec3 normal = normalize(mat3(uMVMatrix) * aVertexNormal);
+        
+        for(int i = 0;i<3;i++){
+            vec3 ambient_color = vec3(Ka[i]) * aFrontColor;
+            /* diffuse */
+            vec3 light_direction = normalize(vec3(light_position[i]) - mvVertex);
+            vec3 H = normalize(light_direction + camera_direction);
+            vec3 diffuseColor = max(dot(normal, light_direction),0.0) * (vec3(Kd[i]) * aFrontColor);
+            /* specular */
+            vec3 specularColor = pow(max(dot(H, normal), 0.0), Shininess) * (vec3(Ks[i]) * aFrontColor);
+            color += ambient_color + diffuseColor + specularColor;
+        }
+        fragcolor = vec4(color, 1.0);
+        gl_Position = uPMatrix * uMVMatrix * vec4(aVertexPosition, 1.0);
+    }
+</script>
+
+<script id="Cel_fragmentShader" type="fragment">
+    #extension GL_OES_standard_derivatives : enable
+    precision highp float;
+    uniform vec3 light_color[3];
+    uniform vec4 light_position[3];
+    uniform vec4 Ka[3];
+    uniform vec4 Kd[3];
+    uniform vec4 Ks[3];
+    uniform float Shininess;
+    varying vec4 fragcolor;
+    varying vec3 mvVertex;
+    varying vec3 normal;
+    void main(void) {
+        vec3 color = vec3(0, 0, 0);
+        vec3 camera_direction = normalize(-mvVertex);
+        
+        for(int i = 0;i<3;i++){
+            /* ambient */
+            vec3 ambient_color = (vec3(Ka[i]) * vec3(fragcolor));
+            //vec3 ambient_color = vec3(Ka[i]);
+            /* diffuse */
+            vec3 light_direction = normalize(vec3(light_position[i]) - mvVertex);
+            float celD = dot(normal, light_direction);
+            if(celD >= 0.66){
+                celD = 0.66;
+            }
+            else if(celD >= 0.33){
+                celD = 0.33;
+            }
+            else{
+                celD = 0.0;
+            }
+            /*float df = max(celD, 0.0);
+            float nSteps = 3.0;
+            float step = sqrt(df) * nSteps;
+            step = (floor(step) + smoothstep(0.48, 0.52, fract(step))) / nSteps;
+            celD = step * step;*/
+            vec3 diffuseColor = celD * (vec3(Kd[i]) * vec3(fragcolor));
+            //vec3 diffuseColor = max(dot(normal, light_direction),0.0) * vec3(Kd[i]);
+            /* specular */
+            vec3 reflection_direction = normalize(reflect(-light_direction, normal));
+            float celS = pow(max(dot(reflection_direction, camera_direction), 0.0), Shininess);
+            if(celS >= 0.5){
+                celS = 0.5;
+            }
+            else{
+                celS = 0.0;
+            }
+            /*float nStepsS = 3.0;
+            float stepS = sqrt(celS) * nStepsS;
+            step = (floor(stepS) + smoothstep(0.48, 0.52, fract(stepS))) / nStepsS;
+            celS = stepS * stepS;*/
+            vec3 specularColor = celS * (vec3(Ks[i]) * vec3(fragcolor));
+            //vec3 specularColor = pow(max(dot(reflection_direction, camera_direction), 0.0), Shininess) * vec3(Ks[i]);
+            color += ambient_color + diffuseColor;
+        }
+        gl_FragColor = vec4(color, 1.0);
+    }
+</script>
+
+<script id="Cel_vertexShader" type="vertex">
+    #extension GL_OES_standard_derivatives : enable
+    attribute vec3 aVertexPosition;
+    attribute vec3 aFrontColor;
+    attribute vec3 aVertexNormal;
+
+    uniform mat4 uMVMatrix;
+    uniform mat4 uPMatrix;
+    
+    varying vec3 normal;
+    varying vec4 fragcolor;
+    varying vec3 mvVertex;
+
+    void main(void) {
+        mvVertex = (uMVMatrix * vec4(aVertexPosition,1.0)).xyz;
+        normal = normalize(mat3(uMVMatrix) * aVertexNormal);
+        fragcolor = vec4(aFrontColor.rgb, 1.0);
+        gl_Position = uPMatrix * uMVMatrix * vec4(aVertexPosition, 1.0);
+    }
+</script>
+
+<script id="Phong_fragmentShader" type="fragment">
+    #extension GL_OES_standard_derivatives : enable
+    precision highp float;
+    uniform vec3 light_color[3];
+    uniform vec4 light_position[3];
+    uniform vec4 Ka[3];
+    uniform vec4 Kd[3];
+    uniform vec4 Ks[3];
+    uniform float Shininess;
+    varying vec4 fragcolor;
+    varying vec3 mvVertex;
+    varying vec3 normal;
+    void main(void) {
+        vec3 color = vec3(0, 0, 0);
+        vec3 camera_direction = normalize(-mvVertex);
+        
+        for(int i = 0;i<3;i++){
+            /* ambient */
+            vec3 ambient_color = (vec3(Ka[i]) * vec3(fragcolor));
+            //vec3 ambient_color = vec3(Ka[i]);
+            /* diffuse */
+            vec3 light_direction = normalize(vec3(light_position[i]) - mvVertex);
+            vec3 diffuseColor = max(dot(normal, light_direction),0.0) * (vec3(Kd[i]) * vec3(fragcolor));
+            //vec3 diffuseColor = max(dot(normal, light_direction),0.0) * vec3(Kd[i]);
+            /* specular */
+            vec3 reflection_direction = normalize(reflect(-light_direction, normal));
+            vec3 specularColor = pow(max(dot(reflection_direction, camera_direction), 0.0), Shininess) * (vec3(Ks[i]) * vec3(fragcolor));
+            //vec3 specularColor = pow(max(dot(reflection_direction, camera_direction), 0.0), Shininess) * vec3(Ks[i]);
+            color += ambient_color + diffuseColor + specularColor;
+        }
+        gl_FragColor = vec4(color, 1.0);
+    }
+</script>
+
+<script id="Phong_vertexShader" type="vertex">
+    #extension GL_OES_standard_derivatives : enable
+    attribute vec3 aVertexPosition;
+    attribute vec3 aFrontColor;
+    attribute vec3 aVertexNormal;
+
+    uniform mat4 uMVMatrix;
+    uniform mat4 uPMatrix;
+    
+    varying vec3 normal;
+    varying vec4 fragcolor;
+    varying vec3 mvVertex;
+
+    void main(void) {
+        mvVertex = (uMVMatrix * vec4(aVertexPosition,1.0)).xyz;
+        normal = normalize(mat3(uMVMatrix) * aVertexNormal);
+        fragcolor = vec4(aFrontColor.rgb, 1.0);
+        gl_Position = uPMatrix * uMVMatrix * vec4(aVertexPosition, 1.0);
+    }
+</script>
+
+<script type="text/javascript">
+    // common variables
+    
+    var light_position = [-50.0, 0.0, 80.0, 1.0, 0.0, 0.0, 80.0, 1.0, 50.0, 0.0, 80, 1.0];
+    var light_color = [255/255, 223/256, 0/255, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0];
+    var light_rotate = [1, 1, 1];
+    var light_stop = [1, 1, 1];
+    var lightAngle = [0, 0, 0];
+    var light_speed = [1, 1, 1];
+    var lightAmbient = [[0.2/3, 0.2/3, 0.2/3, 1.0], [0.2/3, 0.2/3, 0.2/3, 1.0], [0.2/3, 0.2/3, 0.2/3, 1.0]];
+    var lightDiffuse = [[1.0/3, 1.0/3, 1.0/3, 1.0], [1.0/3, 1.0/3, 1.0/3, 1.0], [1.0/3, 1.0/3, 1.0/3, 1.0]];
+    var lightSpecular = [[1.0/3, 1.0/3, 1.0/3, 1.0], [1.0/3, 1.0/3, 1.0/3, 1.0], [1.0/3, 1.0/3, 1.0/3, 1.0]];
+    let config = [{shader: "Flat", position: [-35, 0, -80], model: "Teapot", Ka: [1.0, 1.0, 1.0, 1.0], Kd: [63/255, 63/255, 63/255, 1.0], Ks: [1.0, 1.0, 1.0, 1.0], Shininess: 50, shear: 90, scale: [1, 1, 1], rotate: [0, 1, 0], speed: 1},
+                  {shader: "Gouraud", position: [0, 0, -80], model: "Teapot", Ka: [1.0, 1.0, 1.0, 1.0], Kd: [63/255, 63/255, 63/255, 1.0], Ks: [1.0, 1.0, 1.0, 1.0], Shininess: 50, shear: 90, scale: [1, 1, 1], rotate: [0, 1, 0], speed: 1},
+                  {shader: "Phong", position: [35, 0, -80], model: "Teapot", Ka: [1.0, 1.0, 1.0, 1.0], Kd: [63/255, 63/255, 63/255, 1.0], Ks: [1.0, 1.0, 1.0, 1.0], Shininess: 10, shear: 90, scale: [1, 1, 1], rotate: [0, 1, 0], speed: 1},
+                  ]
+    //var test = [mat4.create(), mat4.create(), mat4.create()]
+    
+    var gl;
+    var shaderProgram;
+
+    var mvMatrix = mat4.create();
+    var pMatrix  = mat4.create();
+    
+    var models = {};
+    var check = {Teapot: 0, Car_road: 0, Csie: 0, Easter: 0, Kangaroo: 0, Church_s: 0, Fighter: 0, Longteap: 0, Mig27: 0, Patchair: 0, Plant: 0, Tomcat: 0, Kirby: 0};
+    var modelSize = {Teapot: 1, Car_road: 50, Csie: 10, Easter: 10, Kangaroo: 10, Church_s: 20, Fighter: 40, Longteap: 50, Mig27: 20, Patchair: 10, Plant: 10, Tomcat: 20, Kirby: 0.5};
+
+    var teapotVertexPositionBuffer;
+    var teapotVertexNormalBuffer;
+    var teapotVertexFrontColorBuffer;
+
+    var teapotAngle = [180, 180, 180];
+    var lastTime    = 0;
+    var mvAngle = 180;
+
+    function initGL(canvas) {
+        try {
+            gl = canvas.getContext("webgl") || canvas.getContext("experimental-webgl");
+            gl.getExtension('OES_standard_derivatives');
+            gl.viewportWidth  = canvas.width;
+            gl.viewportHeight = canvas.height;
+            console.log(gl.VERSION);
+            console.log(gl.SHADOW_LANGUAGE_VERSION);
+            console.log(gl.getSupportedExtensions().join("\n"));
+        } 
+        catch (e) {
+        }
+
+        if (!gl) {
+            alert("Could not initialise WebGL, sorry :-(");
+        }
+    }
+
+    function getShader(gl, id) {
+        var shaderScript = document.getElementById(id);
+        if (!shaderScript) {
+            return null;
+        }
+
+        var shaderSource = "";
+        var k = shaderScript.firstChild;
+        while (k) {
+            if (k.nodeType == 3) {
+                shaderSource += k.textContent;
+            }
+
+            k = k.nextSibling;
+        }
+
+        var shader;
+        if (shaderScript.type == "fragment") {
+            shader = gl.createShader(gl.FRAGMENT_SHADER);
+        } 
+        else if (shaderScript.type == "vertex") {
+            shader = gl.createShader(gl.VERTEX_SHADER);
+        } 
+        else {
+            return null;
+        }
+
+        gl.shaderSource(shader, shaderSource);
+        gl.compileShader(shader);
+
+        if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+            alert(gl.getShaderInfoLog(shader));
+            return null;
+        }
+
+        return shader;
+    }
+
+    function initShaders(name) {
+        var fragmentShader = getShader(gl, name + "_fragmentShader", "fragment");
+        var vertexShader   = getShader(gl, name + "_vertexShader", "vertex");
+
+        let shaderProgram = gl.createProgram();
+        gl.attachShader(shaderProgram, vertexShader);
+        gl.attachShader(shaderProgram, fragmentShader);
+        gl.linkProgram(shaderProgram);
+
+        if (!gl.getProgramParameter(shaderProgram, gl.LINK_STATUS)) {
+            alert("Could not initialise shaders");
+        }
+
+        gl.useProgram(shaderProgram);
+
+        shaderProgram.vertexPositionAttribute = gl.getAttribLocation(shaderProgram, "aVertexPosition");
+        gl.enableVertexAttribArray(shaderProgram.vertexPositionAttribute);
+        shaderProgram.vertexFrontColorAttribute = gl.getAttribLocation(shaderProgram, "aFrontColor");
+        gl.enableVertexAttribArray(shaderProgram.vertexFrontColorAttribute);
+        shaderProgram.vertexNormalAttribute = gl.getAttribLocation(shaderProgram, "aVertexNormal");
+        gl.enableVertexAttribArray(shaderProgram.vertexNormalAttribute);
+        shaderProgram.light_position = gl.getUniformLocation(shaderProgram, "light_position");
+        shaderProgram.light_color = gl.getUniformLocation(shaderProgram, "light_color");
+        
+        shaderProgram.Ka = gl.getUniformLocation(shaderProgram, "Ka");
+        shaderProgram.Kd = gl.getUniformLocation(shaderProgram, "Kd");
+        shaderProgram.Ks = gl.getUniformLocation(shaderProgram, "Ks");
+        shaderProgram.Shininess  = gl.getUniformLocation(shaderProgram, "Shininess");
+
+        shaderProgram.pMatrixUniform  = gl.getUniformLocation(shaderProgram, "uPMatrix");
+        shaderProgram.mvMatrixUniform = gl.getUniformLocation(shaderProgram, "uMVMatrix");
+        
+        return shaderProgram;
+    }
+
+    function setMatrixUniforms(shaderProgram) {
+        gl.uniformMatrix4fv(shaderProgram.pMatrixUniform, false, pMatrix);
+        gl.uniformMatrix4fv(shaderProgram.mvMatrixUniform, false, mvMatrix);
+    }
+
+    function degToRad(degrees) {
+        return degrees * Math.PI / 180;
+    }
+
+    function handleLoadedTeapot(teapotData, model) {
+        let teapotVertexPositionBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, teapotVertexPositionBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(teapotData.vertexPositions), gl.STATIC_DRAW);
+        teapotVertexPositionBuffer.itemSize = 3;
+        teapotVertexPositionBuffer.numItems = teapotData.vertexPositions.length / 3;
+
+        let teapotVertexNormalBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, teapotVertexNormalBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(teapotData.vertexNormals), gl.STATIC_DRAW);
+        teapotVertexNormalBuffer.itemSize = 3;
+        teapotVertexNormalBuffer.numItems = teapotData.vertexNormals.length / 3;
+
+        let teapotVertexFrontColorBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, teapotVertexFrontColorBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(teapotData.vertexFrontcolors), gl.STATIC_DRAW);
+        teapotVertexFrontColorBuffer.itemSize = 3;
+        teapotVertexFrontColorBuffer.numItems = teapotData.vertexFrontcolors.length / 3;
+        models[model] = [teapotVertexPositionBuffer, teapotVertexFrontColorBuffer, teapotVertexNormalBuffer];
+    }
+
+    function loadTeapot(model) {
+        var request = new XMLHttpRequest();
+        request.open("GET", "./model/"+model+".json");
+        request.onreadystatechange = function () {
+            if (request.readyState == 4) {
+                handleLoadedTeapot(JSON.parse(request.responseText), model);
+            }
+        }
+        request.send();
+    }
+
+    /*
+        TODO HERE:
+        add two or more objects showing on the canvas
+        (it needs at least three objects showing at the same time)
+    */
+    
+    function mult(a, b){
+        let Q = [];
+        for(let i = 0;i<4;i++){
+            Q[i] = a[i] * b[i];
+            
+        }
+        return Q;
+    }
+    
+    function drawScene() {
+        gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight);
+        gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+        // Setup Projection Matrix
+        mat4.perspective(45, gl.viewportWidth / gl.viewportHeight, 0.1, 100.0, pMatrix);
+        for(let i = 0;i<3;i++){
+            // Setup Model-View Matrix
+            let shaderProgram;
+            if(config[i]["shader"] == "Flat")
+                shaderProgram = Flat_shader;
+            if(config[i]["shader"] == "Gouraud")
+                shaderProgram = Gouraud_shader;
+            if(config[i]["shader"] == "Phong")
+                shaderProgram = Phong_shader;
+            if(config[i]["shader"] == "Cel")
+                shaderProgram = Cel_shader;
+            let a = [config[i]["position"][0], config[i]["position"][1], config[i]["position"][2]];
+            mat4.identity(mvMatrix);
+            //mat4.rotate(mvMatrix, degToRad(mvAngle), [0, 1, 0]);
+            mat4.translate(mvMatrix, a);
+            let scale = [];
+            scale[0] = modelSize[config[i]["model"]] * config[i]["scale"][0];
+            scale[1] = modelSize[config[i]["model"]] * config[i]["scale"][1];
+            scale[2] = modelSize[config[i]["model"]] * config[i]["scale"][2];
+            mat4.scale(mvMatrix, scale);
+            mat4.rotate(mvMatrix, degToRad(teapotAngle[i]), config[i]["rotate"]);
+            let shear = mat4.create();
+            mat4.identity(shear);
+            shear[4] = 1/Math.tan(degToRad(config[i]["shear"]));
+            mat4.multiply(mvMatrix, shear, mvMatrix);
+            
+
+            gl.useProgram(shaderProgram);
+            setMatrixUniforms(shaderProgram);
+            let modelVertexPositionBuffer = models[config[i]["model"]][0];
+            let modelVertexFrontColorBuffer = models[config[i]["model"]][1];
+            let modelVertexNormalBuffer = models[config[i]["model"]][2];
+            // Setup teapot position data
+            gl.bindBuffer(gl.ARRAY_BUFFER, modelVertexPositionBuffer);
+            gl.vertexAttribPointer(shaderProgram.vertexPositionAttribute, modelVertexPositionBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+            // Setup teapot front color data
+            gl.bindBuffer(gl.ARRAY_BUFFER, modelVertexFrontColorBuffer);
+            gl.vertexAttribPointer(shaderProgram.vertexFrontColorAttribute, modelVertexFrontColorBuffer.itemSize, gl.FLOAT, false, 0, 0);
+            
+            gl.bindBuffer(gl.ARRAY_BUFFER, modelVertexNormalBuffer);
+            gl.vertexAttribPointer(shaderProgram.vertexNormalAttribute, modelVertexNormalBuffer.itemSize, gl.FLOAT, false, 0, 0);
+            let lg = []
+            for(let j = 0;j<3;j++){
+                var angleInRadians = lightAngle[j] * Math.PI / 180;
+                var s = Math.sin(angleInRadians);
+                var c = Math.cos(angleInRadians);
+                let flag = light_rotate[j];
+                if(flag == 1){
+                    let x = light_position[3*j+j%3];
+                    let y = light_position[3*j+j%3+2];
+                    lg[3*j+j%3] = x * c - y * s;
+                    lg[3*j+1+j%3] = light_position[3*j+1+j%3];
+                    lg[3*j+2+j%3] = x * s + y * c;
+                    lg[3*j+3+j%3] = 1;
+                }
+                if(flag == 2){
+                    let x = light_position[3*j+j%3];
+                    let y = light_position[3*j+j%3+1];
+                    lg[3*j+j%3] = x * c - y * s;
+                    lg[3*j+1+j%3] = x * s + y * c;
+                    lg[3*j+2+j%3] = light_position[3*j+2+j%3];
+                    lg[3*j+3+j%3] = 1;
+                }
+                if(flag == 3){
+                    let x = light_position[3*j+j%3+1];
+                    let y = light_position[3*j+j%3+2];
+                    lg[3*j+j%3] = light_position[3*j+j%3];
+                    lg[3*j+1+j%3] = x * c - y * s;
+                    lg[3*j+2+j%3] = x * s + y * c;
+                    lg[3*j+3+j%3] = 1;
+                }
+            }
+            gl.uniform4fv(shaderProgram.light_position, lg);
+            gl.uniform3fv(shaderProgram.light_color, light_color);
+            //let a = numDict.mult(vec4(0, 0, 0, 0), vec4(0, 0, 0, 0));
+            A = [mult(lightAmbient[0], config[i]["Ka"]), mult(lightAmbient[1], config[i]["Ka"]), mult(lightAmbient[2], config[i]["Ka"])];
+            D = [mult(lightDiffuse[0], config[i]["Kd"]), mult(lightDiffuse[1], config[i]["Kd"]), mult(lightDiffuse[2], config[i]["Kd"])];
+            S = [mult(lightSpecular[0], config[i]["Ks"]), mult(lightSpecular[1], config[i]["Ks"]), mult(lightSpecular[2], config[i]["Ks"])];
+            /*A = [lightAmbient[0], lightAmbient[1], lightAmbient[2]];
+            D = [lightDiffuse[0], lightDiffuse[1], lightDiffuse[2]];
+            S = [lightSpecular[0], lightSpecular[1], lightSpecular[2]];*/
+            //alert(A)
+            gl.uniform4fv(shaderProgram.Ka, A.flat());
+            gl.uniform4fv(shaderProgram.Kd, D.flat());
+            gl.uniform4fv(shaderProgram.Ks, S.flat());
+            gl.uniform1f(shaderProgram.Shininess, config[i]["Shininess"]);
+            gl.drawArrays(gl.TRIANGLES, 0, modelVertexPositionBuffer.numItems);
+        }
+    }
+
+    function animate() {
+        var timeNow = new Date().getTime();
+        if (lastTime != 0) {
+            var elapsed = timeNow - lastTime;
+            teapotAngle[0] += 0.03 * elapsed * config[0]["speed"];
+            teapotAngle[1] += 0.03 * elapsed * config[1]["speed"];
+            teapotAngle[2] += 0.03 * elapsed * config[2]["speed"];
+            if(light_stop[0] != 1){
+                lightAngle[0] += 0.3 * elapsed * light_speed[0];
+            }
+            if(light_stop[1] != 1){
+                lightAngle[1] += 0.3 * elapsed * light_speed[1];
+            }
+            if(light_stop[2] != 1){
+                lightAngle[2] += 0.3 * elapsed * light_speed[2];
+            }
+            mvAngle += 0.03 * elapsed;
+        }
+        
+        lastTime = timeNow;
+    }
+
+    function tick() {
+        requestAnimFrame(tick);
+        drawScene();
+        animate();
+    }
+    
+    function materialColor1(e){
+        var C = e.target.value;
+        config[0]["Ka"][0] = parseInt(C.substr(1,2), 16)/255;
+        config[0]["Ka"][1] = parseInt(C.substr(3,2), 16)/255;
+        config[0]["Ka"][2] = parseInt(C.substr(5,2), 16)/255;
+        config[0]["Kd"][0] = parseInt(C.substr(1,2), 16)/255;
+        config[0]["Kd"][1] = parseInt(C.substr(3,2), 16)/255;
+        config[0]["Kd"][2] = parseInt(C.substr(5,2), 16)/255;
+        config[0]["Ks"][0] = parseInt(C.substr(1,2), 16)/255;
+        config[0]["Ks"][1] = parseInt(C.substr(3,2), 16)/255;
+        config[0]["Ks"][2] = parseInt(C.substr(5,2), 16)/255;
+        //console.log(colorpicker.value, config[0]["Kd"][0], C, a);
+    }
+    
+    function materialColor2(e){
+        var C = e.target.value;
+        config[1]["Ka"][0] = parseInt(C.substr(1,2), 16)/255;
+        config[1]["Ka"][1] = parseInt(C.substr(3,2), 16)/255;
+        config[1]["Ka"][2] = parseInt(C.substr(5,2), 16)/255;
+        config[1]["Kd"][0] = parseInt(C.substr(1,2), 16)/255;
+        config[1]["Kd"][1] = parseInt(C.substr(3,2), 16)/255;
+        config[1]["Kd"][2] = parseInt(C.substr(5,2), 16)/255;
+        config[1]["Ks"][0] = parseInt(C.substr(1,2), 16)/255;
+        config[1]["Ks"][1] = parseInt(C.substr(3,2), 16)/255;
+        config[1]["Ks"][2] = parseInt(C.substr(5,2), 16)/255;
+        //console.log(colorpicker.value, config[0]["Kd"][0], C, a);
+    }
+    
+    function materialColor3(e){
+        var C = e.target.value;
+        config[2]["Ka"][0] = parseInt(C.substr(1,2), 16)/255;
+        config[2]["Ka"][1] = parseInt(C.substr(3,2), 16)/255;
+        config[2]["Ka"][2] = parseInt(C.substr(5,2), 16)/255;
+        config[2]["Kd"][0] = parseInt(C.substr(1,2), 16)/255;
+        config[2]["Kd"][1] = parseInt(C.substr(3,2), 16)/255;
+        config[2]["Kd"][2] = parseInt(C.substr(5,2), 16)/255;
+        config[2]["Ks"][0] = parseInt(C.substr(1,2), 16)/255;
+        config[2]["Ks"][1] = parseInt(C.substr(3,2), 16)/255;
+        config[2]["Ks"][2] = parseInt(C.substr(5,2), 16)/255;
+        //console.log(colorpicker.value, config[0]["Kd"][0], C, a);
+    }
+    
+    function lightColor1(e){
+        var C = e.target.value;
+        lightAmbient[0][0] = parseInt(C.substr(1,2), 16)/255/3;
+        lightAmbient[0][1] = parseInt(C.substr(3,2), 16)/255/3;
+        lightAmbient[0][2] = parseInt(C.substr(5,2), 16)/255/3;
+        lightDiffuse[0][0] = parseInt(C.substr(1,2), 16)/255/3;
+        lightDiffuse[0][1] = parseInt(C.substr(3,2), 16)/255/3;
+        lightDiffuse[0][2] = parseInt(C.substr(5,2), 16)/255/3;
+        lightSpecular[0][0] = parseInt(C.substr(1,2), 16)/255/3;
+        lightSpecular[0][1] = parseInt(C.substr(3,2), 16)/255/3;
+        lightSpecular[0][2] = parseInt(C.substr(5,2), 16)/255/3;
+        //console.log(colorpicker.value, config[0]["Kd"][0], C, a);
+    }
+    
+    function lightColor2(e){
+        var C = e.target.value;
+        lightAmbient[1][0] = parseInt(C.substr(1,2), 16)/255/3;
+        lightAmbient[1][1] = parseInt(C.substr(3,2), 16)/255/3;
+        lightAmbient[1][2] = parseInt(C.substr(5,2), 16)/255/3;
+        lightDiffuse[1][0] = parseInt(C.substr(1,2), 16)/255/3;
+        lightDiffuse[1][1] = parseInt(C.substr(3,2), 16)/255/3;
+        lightDiffuse[1][2] = parseInt(C.substr(5,2), 16)/255/3;
+        lightSpecular[1][0] = parseInt(C.substr(1,2), 16)/255/3;
+        lightSpecular[1][1] = parseInt(C.substr(3,2), 16)/255/3;
+        lightSpecular[1][2] = parseInt(C.substr(5,2), 16)/255/3;
+        //console.log(colorpicker.value, config[0]["Kd"][0], C, a);
+    }
+    
+    function lightColor3(e){
+        var C = e.target.value;
+        lightAmbient[2][0] = parseInt(C.substr(1,2), 16)/255/3;
+        lightAmbient[2][1] = parseInt(C.substr(3,2), 16)/255/3;
+        lightAmbient[2][2] = parseInt(C.substr(5,2), 16)/255/3;
+        lightDiffuse[2][0] = parseInt(C.substr(1,2), 16)/255/3;
+        lightDiffuse[2][1] = parseInt(C.substr(3,2), 16)/255/3;
+        lightDiffuse[2][2] = parseInt(C.substr(5,2), 16)/255/3;
+        lightSpecular[2][0] = parseInt(C.substr(1,2), 16)/255/3;
+        lightSpecular[2][1] = parseInt(C.substr(3,2), 16)/255/3;
+        lightSpecular[2][2] = parseInt(C.substr(5,2), 16)/255/3;
+        //console.log(colorpicker.value, config[0]["Kd"][0], C, a);
+    }
+    
+    function sli(e){
+        console.log(e.target.value);
+    }
+    
+    function htstart(){
+        colorpicker1 = document.getElementById("color1");
+        colorpicker1.addEventListener('input', materialColor1);
+        colorpicker2 = document.getElementById("color2");
+        colorpicker2.addEventListener('input', materialColor2);
+        colorpicker3 = document.getElementById("color3");
+        colorpicker3.addEventListener('input', materialColor3);
+        
+        colorpicker4 = document.getElementById("lightC1");
+        colorpicker4.addEventListener('input', lightColor1);
+        colorpicker5 = document.getElementById("lightC2");
+        colorpicker5.addEventListener('input', lightColor2);
+        colorpicker6 = document.getElementById("lightC3");
+        colorpicker6.addEventListener('input', lightColor3);
+        
+        slider1 = document.getElementById("Shininess1");
+        slider1.addEventListener("input", ()=>{
+            config[0]["Shininess"] = 101 - slider1.value;
+            //console.log(slider.value);
+        });
+        slider2 = document.getElementById("Shininess2");
+        slider2.addEventListener("input", ()=>{
+            config[1]["Shininess"] = 101 - slider2.value;
+            //console.log(slider.value);
+        });
+        slider3 = document.getElementById("Shininess3");
+        slider3.addEventListener("input", ()=>{
+            config[2]["Shininess"] = 101 - slider3.value;
+            //console.log(slider.value);
+        });
+        scale1 = document.getElementById("Scale1");
+        scale1.addEventListener("input", ()=>{
+            config[0]["scale"][0] = scale1.value;
+            config[0]["scale"][1] = scale1.value;
+            config[0]["scale"][2] = scale1.value;
+            //console.log(scale1.value, config[0]["Scale"][0]);
+        });
+        scalex1 = document.getElementById("Scalex1");
+        scalex1.addEventListener("input", ()=>{
+            config[0]["scale"][0] = scalex1.value;
+            //console.log(scale1.value, config[0]["Scale"][0]);
+        });
+        scaley1 = document.getElementById("Scaley1");
+        scaley1.addEventListener("input", ()=>{
+            config[0]["scale"][1] = scaley1.value;
+            //console.log(scale1.value, config[0]["Scale"][0]);
+        });
+        scalez1 = document.getElementById("Scalez1");
+        scalez1.addEventListener("input", ()=>{
+            config[0]["scale"][2] = scalez1.value;
+            //console.log(scale1.value, config[0]["Scale"][0]);
+        });
+        scale2 = document.getElementById("Scale2");
+        scale2.addEventListener("input", ()=>{
+            config[1]["scale"][0] = scale2.value;
+            config[1]["scale"][1] = scale2.value;
+            config[1]["scale"][2] = scale2.value;
+            //console.log(scale1.value, config[0]["Scale"][0]);
+        });
+        scalex2 = document.getElementById("Scalex2");
+        scalex2.addEventListener("input", ()=>{
+            config[1]["scale"][0] = scalex2.value;
+            //console.log(scale1.value, config[0]["Scale"][0]);
+        });
+        scaley2 = document.getElementById("Scaley2");
+        scaley2.addEventListener("input", ()=>{
+            config[1]["scale"][1] = scaley2.value;
+            //console.log(scale1.value, config[0]["Scale"][0]);
+        });
+        scalez2 = document.getElementById("Scalez2");
+        scalez2.addEventListener("input", ()=>{
+            config[1]["scale"][2] = scalez2.value;
+            //console.log(scale1.value, config[0]["Scale"][0]);
+        });
+        scale3 = document.getElementById("Scale3");
+        scale3.addEventListener("input", ()=>{
+            config[2]["scale"][0] = scale3.value;
+            config[2]["scale"][1] = scale3.value;
+            config[2]["scale"][2] = scale3.value;
+            //console.log(scale1.value, config[0]["Scale"][0]);
+        });
+        scalex3 = document.getElementById("Scalex3");
+        scalex3.addEventListener("input", ()=>{
+            config[2]["scale"][0] = scalex3.value;
+            //console.log(scale1.value, config[0]["Scale"][0]);
+        });
+        scaley3 = document.getElementById("Scaley3");
+        scaley3.addEventListener("input", ()=>{
+            config[2]["scale"][1] = scaley3.value;
+            //console.log(scale1.value, config[0]["Scale"][0]);
+        });
+        scalez3 = document.getElementById("Scalez3");
+        scalez3.addEventListener("input", ()=>{
+            config[2]["scale"][2] = scalez3.value;
+            //console.log(scale1.value, config[0]["Scale"][0]);
+        });
+        
+        list1 = document.getElementById("list1");
+        list1.addEventListener("input", ()=>{
+            if(check[list1.value] == 0){
+                check[list1.value] = 1;
+                loadTeapot(list1.value);
+            }
+            config[0]["model"] = list1.value;
+            //console.log(list1.value);
+        });
+        list2 = document.getElementById("list2");
+        list2.addEventListener("input", ()=>{
+            if(check[list2.value] == 0){
+                check[list2.value] = 1;
+                loadTeapot(list2.value);
+            }
+            config[1]["model"] = list2.value;
+            //console.log(list1.value);
+        });
+        list3 = document.getElementById("list3");
+        list3.addEventListener("input", ()=>{
+            if(check[list3.value] == 0){
+                check[list3.value] = 1;
+                loadTeapot(list3.value);
+            }
+            config[2]["model"] = list3.value;
+            //console.log(list1.value);
+        });
+        
+        shading1 = document.getElementById("Shading1");
+        shading1.addEventListener("input", ()=>{
+            config[0]["shader"] = shading1.value;
+            //console.log(list1.value);
+        });
+        shading2 = document.getElementById("Shading2");
+        shading2.addEventListener("input", ()=>{
+            config[1]["shader"] = shading2.value;
+            //console.log(list1.value);
+        });
+        shading3 = document.getElementById("Shading3");
+        shading3.addEventListener("input", ()=>{
+            config[2]["shader"] = shading3.value;
+            //console.log(list1.value);
+        });
+        
+        shear1 = document.getElementById("Shear1");
+        shear1.addEventListener("input", ()=>{
+            config[0]["shear"] = shear1.value;
+        });
+        shear2 = document.getElementById("Shear2");
+        shear2.addEventListener("input", ()=>{
+            config[1]["shear"] = shear2.value;
+        });
+        shear3 = document.getElementById("Shear3");
+        shear3.addEventListener("input", ()=>{
+            config[2]["shear"] = shear3.value;
+        });
+        
+        rotate1 = document.getElementsByName("Rotate1");
+        rotate1[0].addEventListener("input", ()=>{
+            config[0]["rotate"] = [1, 0, 0];
+        });
+        rotate1[1].addEventListener("input", ()=>{
+            config[0]["rotate"] = [0, 1, 0];
+        });
+        rotate1[2].addEventListener("input", ()=>{
+            config[0]["rotate"] = [0, 0, 1];
+        });
+        rotate2 = document.getElementsByName("Rotate2");
+        rotate2[0].addEventListener("input", ()=>{
+            config[1]["rotate"] = [1, 0, 0];
+        });
+        rotate2[1].addEventListener("input", ()=>{
+            config[1]["rotate"] = [0, 1, 0];
+        });
+        rotate2[2].addEventListener("input", ()=>{
+            config[1]["rotate"] = [0, 0, 1];
+        });
+        rotate3 = document.getElementsByName("Rotate3");
+        rotate3[0].addEventListener("input", ()=>{
+            config[2]["rotate"] = [1, 0, 0];
+        });
+        rotate3[1].addEventListener("input", ()=>{
+            config[2]["rotate"] = [0, 1, 0];
+        });
+        rotate3[2].addEventListener("input", ()=>{
+            config[2]["rotate"] = [0, 0, 1];
+        });
+        
+        speed1 = document.getElementById("Speed1");
+        speed1.addEventListener("input", ()=>{
+            config[0]["speed"] = speed1.value;
+        });
+        speed2 = document.getElementById("Speed2");
+        speed2.addEventListener("input", ()=>{
+            config[1]["speed"] = speed2.value;
+        });
+        speed3 = document.getElementById("Speed3");
+        speed3.addEventListener("input", ()=>{
+            config[2]["speed"] = speed3.value;
+        });
+        
+        rotatel1 = document.getElementsByName("RotateL1");
+        rotatel1[0].addEventListener("input", ()=>{
+            light_rotate[0] = 1;
+            light_stop[0] = 0;
+        });
+        rotatel1[1].addEventListener("input", ()=>{
+            light_rotate[0] = 2;
+            light_stop[0] = 0;
+        });
+        rotatel1[2].addEventListener("input", ()=>{
+            light_rotate[0] = 3;
+            light_stop[0] = 0;
+        });
+        rotatel1[3].addEventListener("input", ()=>{
+            light_stop[0] = 1;
+        });
+        rotatel2 = document.getElementsByName("RotateL2");
+        rotatel2[0].addEventListener("input", ()=>{
+            light_rotate[1] = 1;
+            light_stop[1] = 0;
+        });
+        rotatel2[1].addEventListener("input", ()=>{
+            light_rotate[1] = 2;
+            light_stop[1] = 0;
+        });
+        rotatel2[2].addEventListener("input", ()=>{
+            light_rotate[1] = 3;
+            light_stop[1] = 0;
+        });
+        rotatel2[3].addEventListener("input", ()=>{
+            light_stop[1] = 1;
+        });
+        rotatel3 = document.getElementsByName("RotateL3");
+        rotatel3[0].addEventListener("input", ()=>{
+            light_rotate[2] = 1;
+            light_stop[2] = 0;
+        });
+        rotatel3[1].addEventListener("input", ()=>{
+            light_rotate[2] = 2;
+            light_stop[2] = 0;
+        });
+        rotatel3[2].addEventListener("input", ()=>{
+            light_rotate[2] = 3;
+            light_stop[2] = 0;
+        });
+        rotatel3[3].addEventListener("input", ()=>{
+            light_stop[2] = 1;
+        });
+        
+        speedl1 = document.getElementById("SpeedL1");
+        speedl1.addEventListener("input", ()=>{
+            light_speed[0] = speedl1.value;
+        });
+        speedl2 = document.getElementById("SpeedL2");
+        speedl2.addEventListener("input", ()=>{
+            light_speed[1] = speedl2.value;
+        });
+        speedl3 = document.getElementById("SpeedL3");
+        speedl3.addEventListener("input", ()=>{
+            light_speed[2] = speedl3.value;
+        });
+        
+        x1 = document.getElementById("X1");
+        x1.addEventListener("input", ()=>{
+            config[0]["position"][0] = x1.value;
+        });
+        y1 = document.getElementById("Y1");
+        y1.addEventListener("input", ()=>{
+            config[0]["position"][1] = y1.value;
+        });
+        z1 = document.getElementById("Z1");
+        z1.addEventListener("input", ()=>{
+            config[0]["position"][2] = z1.value;
+        });
+        x2 = document.getElementById("X2");
+        x2.addEventListener("input", ()=>{
+            config[1]["position"][0] = x2.value;
+        });
+        y2 = document.getElementById("Y2");
+        y2.addEventListener("input", ()=>{
+            config[1]["position"][1] = y2.value;
+        });
+        z2 = document.getElementById("Z2");
+        z2.addEventListener("input", ()=>{
+            config[1]["position"][2] = z2.value;
+        });
+        x3 = document.getElementById("X3");
+        x3.addEventListener("input", ()=>{
+            config[2]["position"][0] = x3.value;
+        });
+        y3 = document.getElementById("Y3");
+        y3.addEventListener("input", ()=>{
+            config[2]["position"][1] = y3.value;
+        });
+        z3 = document.getElementById("Z3");
+        z3.addEventListener("input", ()=>{
+            config[2]["position"][2] = z3.value;
+        });
+    }
+
+    function webGLStart() {
+        var canvas = document.getElementById("ICG-canvas");
+        initGL(canvas);
+        Flat_shader = initShaders("Flat");
+        Gouraud_shader = initShaders("Gouraud");
+        Phong_shader = initShaders("Phong");
+        Cel_shader = initShaders("Cel");
+        htstart();
+        loadTeapot(config[0]["model"]);
+        
+        gl.clearColor(0.0, 0.2, 0.2, 1.0);
+        gl.enable(gl.DEPTH_TEST);
+
+        tick();
+    }
+</script>
+</head>
+
+<body onload="webGLStart();">
+    <canvas id="ICG-canvas" style="border: none;" width="1280" height="720"></canvas>
+    <br/>
+</body>
+<fieldset>
+<fieldset>
+<div>
+<label>Shading of Object1</label>
+<select id="Shading1">
+    <option value="Flat">Flat</option>
+    <option value="Gouraud">Gouraud</option>
+    <option value="Phong">Phong</option>
+    <option value="Cel">Cel</option>
+</select>
+<label>Shading of Object2</label>
+<select id="Shading2">
+    <option value="Flat">Flat</option>
+    <option value="Gouraud" selected>Gouraud</option>
+    <option value="Phong">Phong</option>
+    <option value="Cel">Cel</option>
+</select>
+<label>Shading of Object3</label>
+<select id="Shading3">
+    <option value="Flat">Flat</option>
+    <option value="Gouraud">Gouraud</option>
+    <option value="Phong" selected>Phong</option>
+    <option value="Cel">Cel</option>
+</select>
+</div>
+<label>Model of Object1</label>
+<select id="list1">
+    <option value="Teapot">Teapot</option>
+    <option value="Car_road">Car</option>
+    <option value="Csie">Csie</option>
+    <option value="Easter">Easter</option>
+    <option value="Kangaroo">Kangaroo</option>
+    <option value="Church_s">Church</option>
+    <option value="Fighter">Fighter</option>
+    <option value="Longteap">Longteap</option>
+    <option value="Mig27">Mig27</option>
+    <option value="Patchair">Patchair</option>
+    <option value="Plant">Plant</option>
+    <option value="Tomcat">Tomcat</option>
+    <option value="Kirby">Kirby</option>
+</select>
+<label>Model of Object2</label>
+<select id="list2">
+    <option value="Teapot">Teapot</option>
+    <option value="Car_road">Car</option>
+    <option value="Csie">Csie</option>
+    <option value="Easter">Easter</option>
+    <option value="Kangaroo">Kangaroo</option>
+    <option value="Church_s">Church</option>
+    <option value="Fighter">Fighter</option>
+    <option value="Longteap">Longteap</option>
+    <option value="Mig27">Mig27</option>
+    <option value="Patchair">Patchair</option>
+    <option value="Plant">Plant</option>
+    <option value="Tomcat">Tomcat</option>
+    <option value="Kirby">Kirby</option>
+</select>
+<label>Model of Object3</label>
+<select id="list3">
+    <option value="Teapot">Teapot</option>
+    <option value="Car_road">Car</option>
+    <option value="Csie">Csie</option>
+    <option value="Easter">Easter</option>
+    <option value="Kangaroo">Kangaroo</option>
+    <option value="Church_s">Church</option>
+    <option value="Fighter">Fighter</option>
+    <option value="Longteap">Longteap</option>
+    <option value="Mig27">Mig27</option>
+    <option value="Patchair">Patchair</option>
+    <option value="Plant">Plant</option>
+    <option value="Tomcat">Tomcat</option>
+    <option value="Kirby">Kirby</option>
+</select>
+</fieldset>
+<fieldset>
+<div>
+    <label for="color1">Color of Object1:</label>
+    <input type="color" value="#ff0800" id="color1" name="Color of Object1">
+    <label for="color2">Color of Object2:</label>
+    <input type="color" value="#ff0800" id="color2" name="Color of Object 2">
+    <label for="color3">Color of Object3:</label>
+    <input type="color" value="#ff0800" id="color3" name="Color of Object 3">
+</div>
+<div>
+    <label for="lightC1">Light Color1:&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp</label>
+    <input type="color" value="#ff0800" id="lightC1">
+    <label for="lightC2">Light Color2:&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp</label>
+    <input type="color" value="#ff0800" id="lightC2">
+    <label for="lightC3">Light Color3:&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp</label>
+    <input type="color" value="#ff0800" id="lightC3">
+</div></br
+<div>
+    <label>Rotate axis of Light1:</label>
+    <input type="radio" name="RotateL1" value="X">X
+    <input type="radio" name="RotateL1" value="Y" checked="checked">Y
+    <input type="radio" name="RotateL1" value="Z">Z
+    <input type="radio" name="RotateL1" value="Stop">Stop&nbsp&nbsp&nbsp
+    <label>Rotate speed of Light1:</label>
+    <input type="number" placeholder="1.0" id=SpeedL1>
+</div>
+<div>
+    <label>Rotate axis of Light2:</label>
+    <input type="radio" name="RotateL2" value="X">X
+    <input type="radio" name="RotateL2" value="Y" checked="checked">Y
+    <input type="radio" name="RotateL2" value="Z">Z
+    <input type="radio" name="RotateL2" value="Stop">Stop&nbsp&nbsp&nbsp
+    <label>Rotate speed of Light2:</label>
+    <input type="number" placeholder="1.0" id=SpeedL2>
+</div>
+<div>
+    <label>Rotate axis of Light3:</label>
+    <input type="radio" name="RotateL3" value="X">X
+    <input type="radio" name="RotateL3" value="Y" checked="checked">Y
+    <input type="radio" name="RotateL3" value="Z">Z
+    <input type="radio" name="RotateL3" value="Stop">Stop&nbsp&nbsp&nbsp
+    <label>Rotate speed of Light3:</label>
+    <input type="number" placeholder="1.0" id=SpeedL3>
+</div>
+<div class="slidecontainer">
+    <label for="Shininess1">Shininess of Object1:</label>
+    <input type="range" min="1" max="100" value="50" class="slider" id="Shininess1">
+    <label for="Shininess2">Shininess of Object2:</label>
+    <input type="range" min="1" max="100" value="50" class="slider" id="Shininess2">
+    <label for="Shininess3">Shininess of Object3:</label>
+    <input type="range" min="1" max="100" value="50" class="slider" id="Shininess3">
+</div>
+</fieldset>
+<fieldset>
+<div class="slidecontainer">
+    <label for="Scale1">Total Scale of Object1:</label>
+    <input type="range" min="1" max="10" value="1" class="slider" id="Scale1">
+    <label for="Scalex1">X:</label>
+    <input type="range" min="1" max="10" value="1" class="slider" id="Scalex1">
+    <label for="Scaley1">Y:</label>
+    <input type="range" min="1" max="10" value="1" class="slider" id="Scaley1">
+    <label for="Scalez1">Z:</label>
+    <input type="range" min="1" max="10" value="1" class="slider" id="Scalez1">
+</div>
+<div class="slidecontainer">
+    <label for="Scale2">Total Scale of Object2:</label>
+    <input type="range" min="1" max="10" value="1" class="slider" id="Scale2">
+    <label for="Scalex2">X:</label>
+    <input type="range" min="1" max="10" value="1" class="slider" id="Scalex2">
+    <label for="Scaley2">Y:</label>
+    <input type="range" min="1" max="10" value="1" class="slider" id="Scaley2">
+    <label for="Scalez2">Z:</label>
+    <input type="range" min="1" max="10" value="1" class="slider" id="Scalez2">
+</div>
+<div class="slidecontainer">
+    <label for="Scale3">Total Scale of Object3:</label>
+    <input type="range" min="1" max="10" value="1" class="slider" id="Scale3">
+    <label for="Scalex3">X:</label>
+    <input type="range" min="1" max="10" value="1" class="slider" id="Scalex3">
+    <label for="Scaley3">Y:</label>
+    <input type="range" min="1" max="10" value="1" class="slider" id="Scaley3">
+    <label for="Scalez3">Z:</label>
+    <input type="range" min="1" max="10" value="1" class="slider" id="Scalez3">
+</div>
+<div>
+    <label for="Shear1">Shear of Object1:</label>
+    <input type="range" min="0" max="360" value="90" class="slider" id="Shear1">
+    <label for="Shear2">Shear of Object2:</label>
+    <input type="range" min="0" max="360" value="90" class="slider" id="Shear2">
+    <label for="Shear3">Shear of Object3:</label>
+    <input type="range" min="0" max="360" value="90" class="slider" id="Shear3">
+</div>
+<div>
+    <label>Position of Object1 X:</label>
+    <input type="number" placeholder="1.0" id=X1>
+    <label> Y: </label>
+    <input type="number" placeholder="1.0" id=Y1>
+    <label> Z: </label>
+    <input type="number" placeholder="1.0" id=Z1>
+</div>
+<div>
+    <label>Position of Object2 X:</label>
+    <input type="number" placeholder="1.0" id=X2>
+    <label> Y: </label>
+    <input type="number" placeholder="1.0" id=Y2>
+    <label> Z: </label>
+    <input type="number" placeholder="1.0" id=Z2>
+</div>
+<div>
+    <label>Position of Object3 X:</label>
+    <input type="number" placeholder="1.0" id=X3>
+    <label> Y: </label>
+    <input type="number" placeholder="1.0" id=Y3>
+    <label> Z: </label>
+    <input type="number" placeholder="1.0" id=Z3>
+</div><br
+<form>
+    <label>Rotate axis of Object1:</label>
+    <input type="radio" name="Rotate1" value="X">X
+    <input type="radio" name="Rotate1" value="Y" checked="checked">Y
+    <input type="radio" name="Rotate1" value="Z">Z&nbsp&nbsp&nbsp
+    <label>Rotate speed of Object1:</label>
+    <input type="number" placeholder="1.0" id=Speed1>
+</form><br
+<form>
+    <label>Rotate axis of Object2:</label>
+    <input type="radio" name="Rotate2" value="X">X
+    <input type="radio" name="Rotate2" value="Y" checked="checked">Y
+    <input type="radio" name="Rotate2" value="Z">Z&nbsp&nbsp&nbsp
+    <label>Rotate speed of Object2:</label>
+    <input type="number" placeholder="1.0" id=Speed2>
+</form><br
+<form>
+    <label>Rotate axis of Object3:</label>
+    <input type="radio" name="Rotate3" value="X">X
+    <input type="radio" name="Rotate3" value="Y" checked="checked">Y
+    <input type="radio" name="Rotate3" value="Z">Z&nbsp&nbsp&nbsp
+    <label>Rotate speed of Object3:</label>
+    <input type="number" placeholder="1.0" id=Speed3>
+</form>
+</fieldset>
+</fieldset>
+</html>
